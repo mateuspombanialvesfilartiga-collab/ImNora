@@ -1,0 +1,6 @@
+{
+  "name": "Imnora - Marketplace Imobiliário",
+  "description": "A startup imobiliária que conecta proprietários, corretores autônomos credenciados e compradores com total transparência e comissão justa.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
