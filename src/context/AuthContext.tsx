@@ -5,10 +5,11 @@ import { apiRequest, setApiToken } from '../api/client.js';
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, pass: string) => Promise<void>;
-  register: (payload: any) => Promise<void>;
+  login: (email: string, pass: string) => Promise<User>;
+  register: (payload: any) => Promise<User>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  switchRole: (role: 'owner' | 'seller' | 'buyer' | 'admin') => Promise<User>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -26,8 +27,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const switchRole = async (role: 'owner' | 'seller' | 'buyer' | 'admin'): Promise<User> => {
+    const res = await apiRequest<{ token: string; user: User }>('/api/auth/quick-role-switch', {
+      method: 'POST',
+      body: JSON.stringify({ role })
+    });
+    setApiToken(res.token);
+    setUser(res.user);
+    return res.user;
+  };
+
   useEffect(() => {
-    // On boot, try to get current session via refresh token cookie
+    // On boot, check if there is an active session
     async function initSession() {
       try {
         const refreshRes = await fetch('/api/auth/refresh', {
@@ -51,22 +62,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initSession();
   }, []);
 
-  const login = async (email: string, pass: string) => {
+  const login = async (email: string, pass: string): Promise<User> => {
     const res = await apiRequest<{ token: string; user: User }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password: pass })
     });
     setApiToken(res.token);
     setUser(res.user);
+    return res.user;
   };
 
-  const register = async (payload: any) => {
+  const register = async (payload: any): Promise<User> => {
     const res = await apiRequest<{ token: string; user: User }>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(payload)
     });
     setApiToken(res.token);
     setUser(res.user);
+    return res.user;
   };
 
   const logout = async () => {
@@ -80,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, isLoading, login, register, logout, refreshUser, switchRole }}>
       {children}
     </AuthContext.Provider>
   );

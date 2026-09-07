@@ -52,6 +52,52 @@ router.get('/metrics', (req: Request, res: Response) => {
   });
 });
 
+// GET /api/admin/users: All registered real profiles connected to the database for analysis
+router.get('/users', (req: Request, res: Response) => {
+  const users = queryAll(
+    `SELECT
+      u.id, u.email, u.role, u.is_active, u.created_at, u.updated_at,
+      COALESCE(bp.full_name, op.full_name, sp.full_name, 'Administrador') as full_name,
+      COALESCE(bp.phone, op.phone, sp.phone) as phone,
+      bp.preferences as buyer_preferences,
+      op.document_number as owner_document,
+      sp.creci_number, sp.creci_state, sp.bio as seller_bio, sp.verified_status, sp.rating_avg, sp.reviews_count, sp.sales_count
+     FROM users u
+     LEFT JOIN buyer_profiles bp ON u.id = bp.user_id
+     LEFT JOIN owner_profiles op ON u.id = op.user_id
+     LEFT JOIN seller_profiles sp ON u.id = sp.user_id
+     ORDER BY u.created_at DESC`
+  );
+
+  return res.json({ users });
+});
+
+// GET /api/admin/database-stats: Comprehensive SQLite Database Analysis
+router.get('/database-stats', (req: Request, res: Response) => {
+  const usersCount = queryOne<{ total: number }>(`SELECT COUNT(*) as total FROM users`);
+  const buyersCount = queryOne<{ total: number }>(`SELECT COUNT(*) as total FROM users WHERE role = 'buyer'`);
+  const sellersCount = queryOne<{ total: number }>(`SELECT COUNT(*) as total FROM users WHERE role = 'seller'`);
+  const ownersCount = queryOne<{ total: number }>(`SELECT COUNT(*) as total FROM users WHERE role = 'owner'`);
+  const propertiesCount = queryOne<{ total: number }>(`SELECT COUNT(*) as total FROM properties`);
+  const verificationsCount = queryOne<{ total: number }>(`SELECT COUNT(*) as total FROM seller_verifications`);
+  const auditLogsCount = queryOne<{ total: number }>(`SELECT COUNT(*) as total FROM audit_logs`);
+
+  return res.json({
+    stats: {
+      totalUsers: usersCount?.total || 0,
+      totalBuyers: buyersCount?.total || 0,
+      totalSellers: sellersCount?.total || 0,
+      totalOwners: ownersCount?.total || 0,
+      totalProperties: propertiesCount?.total || 0,
+      totalVerifications: verificationsCount?.total || 0,
+      totalAuditLogs: auditLogsCount?.total || 0,
+      dbEngine: 'SQLite (sql.js persistent buffer)',
+      schemaVersion: '2.0.0 (Pure Real Data)',
+      lastSync: new Date().toISOString()
+    }
+  });
+});
+
 // GET /api/admin/verifications: Seller verification queue
 router.get('/verifications', (req: Request, res: Response) => {
   const verifications = queryAll(
@@ -267,14 +313,19 @@ router.post('/run-security-tests', async (req: Request, res: Response) => {
   // 3. Test Duplicate Application Prevention
   try {
     const testPropId = 'prop_test_dup_' + Date.now();
-    const testSellerId = 'usr_seller1';
+    const testOwnerId = 'usr_test_temp_owner_' + Date.now();
+    const testSellerId = 'usr_test_temp_seller_' + Date.now();
     const now = new Date().toISOString();
+
+    // Create temp users for test
+    runQuery(`INSERT INTO users (id, email, password_hash, role, is_active, failed_login_attempts, created_at, updated_at) VALUES (?, ?, 'dummy', 'owner', 1, 0, ?, ?)`, [testOwnerId, `${testOwnerId}@test.local`, now, now]);
+    runQuery(`INSERT INTO users (id, email, password_hash, role, is_active, failed_login_attempts, created_at, updated_at) VALUES (?, ?, 'dummy', 'seller', 1, 0, ?, ?)`, [testSellerId, `${testSellerId}@test.local`, now, now]);
 
     // Create temp property
     runQuery(
       `INSERT INTO properties (id, owner_id, title, description, property_type, price, address, neighborhood, city, state, area_sqm, status, created_at, updated_at)
-       VALUES (?, 'usr_owner1', 'Imóvel Teste Dup', 'Desc', 'Apartamento', 500000, 'Rua Teste', 'Bairro', 'SP', 'SP', 60, 'published_open', ?, ?)`,
-      [testPropId, now, now]
+       VALUES (?, ?, 'Imóvel Teste Dup', 'Desc', 'Apartamento', 500000, 'Rua Teste', 'Bairro', 'SP', 'SP', 60, 'published_open', ?, ?)`,
+      [testPropId, testOwnerId, now, now]
     );
 
     // First application: must succeed
@@ -296,8 +347,10 @@ router.post('/run-security-tests', async (req: Request, res: Response) => {
       dupFailedAsExpected = true;
     }
 
-    // Cleanup temp property
+    // Cleanup temp property and users
+    runQuery(`DELETE FROM seller_applications WHERE property_id = ?`, [testPropId]);
     runQuery(`DELETE FROM properties WHERE id = ?`, [testPropId]);
+    runQuery(`DELETE FROM users WHERE id IN (?, ?)`, [testOwnerId, testSellerId]);
 
     results.push({
       testName: 'Prevenção de Candidatura Duplicada (Seção 4.3 e 11.9)',
@@ -319,33 +372,40 @@ router.post('/run-security-tests', async (req: Request, res: Response) => {
   // 4. Test Atomic Application Acceptance
   try {
     const testPropId = 'prop_test_atomic_' + Date.now();
+    const testOwnerId = 'usr_test_atom_owner_' + Date.now();
+    const testSeller1 = 'usr_test_atom_s1_' + Date.now();
+    const testSeller2 = 'usr_test_atom_s2_' + Date.now();
     const appAId = 'app_atom_a_' + Date.now();
     const appBId = 'app_atom_b_' + Date.now();
     const now = new Date().toISOString();
 
+    runQuery(`INSERT INTO users (id, email, password_hash, role, is_active, failed_login_attempts, created_at, updated_at) VALUES (?, ?, 'dummy', 'owner', 1, 0, ?, ?)`, [testOwnerId, `${testOwnerId}@test.local`, now, now]);
+    runQuery(`INSERT INTO users (id, email, password_hash, role, is_active, failed_login_attempts, created_at, updated_at) VALUES (?, ?, 'dummy', 'seller', 1, 0, ?, ?)`, [testSeller1, `${testSeller1}@test.local`, now, now]);
+    runQuery(`INSERT INTO users (id, email, password_hash, role, is_active, failed_login_attempts, created_at, updated_at) VALUES (?, ?, 'dummy', 'seller', 1, 0, ?, ?)`, [testSeller2, `${testSeller2}@test.local`, now, now]);
+
     runQuery(
       `INSERT INTO properties (id, owner_id, title, description, property_type, price, address, neighborhood, city, state, area_sqm, status, created_at, updated_at)
-       VALUES (?, 'usr_owner1', 'Imóvel Teste Atomic', 'Desc', 'Casa', 800000, 'Rua Atom', 'Bairro', 'SP', 'SP', 100, 'published_open', ?, ?)`,
-      [testPropId, now, now]
+       VALUES (?, ?, 'Imóvel Teste Atomic', 'Desc', 'Casa', 800000, 'Rua Atom', 'Bairro', 'SP', 'SP', 100, 'published_open', ?, ?)`,
+      [testPropId, testOwnerId, now, now]
     );
 
     runQuery(
       `INSERT INTO seller_applications (id, property_id, seller_id, commission_percent, message, status, created_at, updated_at)
-       VALUES (?, ?, 'usr_seller1', 4.0, 'Cand A', 'submitted', ?, ?)`,
-      [appAId, testPropId, now, now]
+       VALUES (?, ?, ?, 4.0, 'Cand A', 'submitted', ?, ?)`,
+      [appAId, testPropId, testSeller1, now, now]
     );
 
     runQuery(
       `INSERT INTO seller_applications (id, property_id, seller_id, commission_percent, message, status, created_at, updated_at)
-       VALUES (?, ?, 'usr_seller2', 4.5, 'Cand B', 'submitted', ?, ?)`,
-      [appBId, testPropId, now, now]
+       VALUES (?, ?, ?, 4.5, 'Cand B', 'submitted', ?, ?)`,
+      [appBId, testPropId, testSeller2, now, now]
     );
 
     // Run atomic transaction to accept A
     executeTransaction(() => {
       runQuery(`UPDATE seller_applications SET status = 'accepted', updated_at = ? WHERE id = ?`, [now, appAId]);
       runQuery(`UPDATE seller_applications SET status = 'rejected', updated_at = ? WHERE property_id = ? AND id != ?`, [now, testPropId, appAId]);
-      runQuery(`UPDATE properties SET status = 'seller_selected', assigned_seller_id = 'usr_seller1', updated_at = ? WHERE id = ?`, [now, testPropId]);
+      runQuery(`UPDATE properties SET status = 'seller_selected', assigned_seller_id = ?, updated_at = ? WHERE id = ?`, [testSeller1, now, testPropId]);
     });
 
     const appA = queryOne<{ status: string }>(`SELECT status FROM seller_applications WHERE id = ?`, [appAId]);
@@ -356,11 +416,13 @@ router.post('/run-security-tests', async (req: Request, res: Response) => {
       appA?.status === 'accepted' &&
       appB?.status === 'rejected' &&
       prop?.status === 'seller_selected' &&
-      prop?.assigned_seller_id === 'usr_seller1'
+      prop?.assigned_seller_id === testSeller1
     );
 
     // Cleanup
+    runQuery(`DELETE FROM seller_applications WHERE property_id = ?`, [testPropId]);
     runQuery(`DELETE FROM properties WHERE id = ?`, [testPropId]);
+    runQuery(`DELETE FROM users WHERE id IN (?, ?, ?)`, [testOwnerId, testSeller1, testSeller2]);
 
     results.push({
       testName: 'Aceitação Atômica e Fechamento Concorrente (Seção 4.3 e 11.9)',

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext.js';
-import { Property, SellerPublicProfile } from './types.js';
+import { Property, SellerPublicProfile, User } from './types.js';
 import { apiRequest } from './api/client.js';
 import { Navbar } from './components/Navbar.js';
 import { ExploreView } from './views/ExploreView.js';
@@ -13,6 +13,15 @@ import { BuyerDashboardView } from './views/BuyerDashboardView.js';
 import { AdminPanel } from './components/AdminPanel.js';
 import { ChatView } from './components/ChatView.js';
 import { ImnoraLogo } from './components/ImnoraLogo.js';
+import {
+  KeyRound,
+  Briefcase,
+  Users,
+  ShieldCheck,
+  Building2,
+  Sparkles,
+  LogOut
+} from 'lucide-react';
 
 // Modals
 import { AuthModal } from './components/AuthModal.js';
@@ -25,13 +34,11 @@ import { ReviewModal } from './components/ReviewModal.js';
 import { SellerProfileModal } from './components/SellerProfileModal.js';
 
 function MainLayout() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, logout } = useAuth();
+  const isAuthenticated = !!user;
 
   // Navigation views:
-  // 'explore' | 'sellers' | 'how_it_works' | 'login'
-  // 'owner_dashboard' | 'seller_dashboard' | 'buyer_dashboard' | 'dashboard'
-  // 'chat_seller' | 'chat_owners' | 'chat_buyers' | 'chat'
-  // 'admin_panel' | 'admin'
+  // Starts on 'explore' showing the inspiring motivational startup message and property catalog
   const [currentView, setCurrentView] = useState<string>('explore');
 
   // Active Modals
@@ -54,6 +61,17 @@ function MainLayout() {
 
   // Chat initial conversation
   const [chatInitialConvId, setChatInitialConvId] = useState<string | null>(null);
+
+  const handleAuthSuccess = (loggedInUser?: User) => {
+    const target = loggedInUser || user;
+    if (target) {
+      if (target.role === 'seller') setCurrentView('seller_dashboard');
+      else if (target.role === 'buyer') setCurrentView('buyer_dashboard');
+      else if (target.role === 'owner') setCurrentView('owner_dashboard');
+      else if (target.role === 'admin') setCurrentView('admin_panel');
+      else setCurrentView('explore');
+    }
+  };
 
   // Handlers
   const handleOpenAuth = (mode: 'login' | 'register') => {
@@ -102,6 +120,19 @@ function MainLayout() {
     }
   };
 
+  const handleOpenMyDashboard = () => {
+    if (user?.role === 'owner') setCurrentView('owner_dashboard');
+    else if (user?.role === 'seller') setCurrentView('seller_dashboard');
+    else if (user?.role === 'buyer') setCurrentView('buyer_dashboard');
+    else if (user?.role === 'admin') setCurrentView('admin_panel');
+    else setCurrentView('login');
+  };
+
+  const handleLogoutAndSwitch = async () => {
+    await logout();
+    setCurrentView('login');
+  };
+
   return (
     <div className="min-h-screen bg-[#F7F4EE] flex flex-col font-sans antialiased text-[#081426] selection:bg-[#081426] selection:text-[#FAF8F5]">
       {/* Top Navigation */}
@@ -129,6 +160,74 @@ function MainLayout() {
           }
         }}
       />
+
+      {/* Real Authenticated Session Bar */}
+      {isAuthenticated && user && (
+        <section className="bg-[#081426] border-b border-[#1A2E4C] py-2 px-4 sm:px-6 shadow-sm sticky top-16 z-30">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span className="text-xs font-bold text-[#FAF8F5] tracking-wide uppercase">
+                {user.role === 'seller' && 'Vendedor Autônomo Conectado'}
+                {user.role === 'buyer' && 'Comprador Conectado'}
+                {user.role === 'owner' && 'Proprietário Conectado'}
+                {user.role === 'admin' && 'Administrador Conectado'}
+              </span>
+              <span className="text-[11px] text-[#A39682] hidden md:inline">
+                ({user.fullName || user.email})
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <button
+                id="my-dashboard-btn"
+                onClick={handleOpenMyDashboard}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  (currentView === 'seller_dashboard' || currentView === 'buyer_dashboard' || currentView === 'owner_dashboard' || currentView === 'admin_panel')
+                    ? 'bg-[#C5A880] text-[#081426] shadow-xs'
+                    : 'bg-[#0F223D] text-[#FAF8F5] hover:bg-[#162D4D] border border-[#2A446B]'
+                }`}
+              >
+                {user.role === 'seller' && <Briefcase className="w-3.5 h-3.5" />}
+                {user.role === 'buyer' && <Users className="w-3.5 h-3.5" />}
+                {user.role === 'owner' && <KeyRound className="w-3.5 h-3.5" />}
+                {user.role === 'admin' && <ShieldCheck className="w-3.5 h-3.5" />}
+                <span>
+                  {user.role === 'seller' && 'Acessar Meu Painel de Vendas'}
+                  {user.role === 'buyer' && 'Acessar Meu Painel de Compras'}
+                  {user.role === 'owner' && 'Acessar Meu Painel de Imóveis'}
+                  {user.role === 'admin' && 'Acessar Painel de Auditoria'}
+                </span>
+              </button>
+
+              <div className="h-4 w-px bg-[#1F3759] mx-1 hidden sm:block"></div>
+
+              <button
+                id="dash-btn-explore"
+                onClick={() => setCurrentView('explore')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                  currentView === 'explore'
+                    ? 'bg-[#FAF8F5] text-[#081426] font-bold'
+                    : 'bg-[#0F223D] text-[#D4C3A3] hover:text-[#FAF8F5] hover:bg-[#162D4D] border border-[#1F3759]'
+                }`}
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                <span>Início / Imóveis</span>
+              </button>
+
+              <button
+                id="dash-btn-logout"
+                onClick={handleLogoutAndSwitch}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all text-[#A39682] hover:text-rose-300 hover:bg-rose-950/40 border border-[#1F3759] hover:border-rose-800/60 flex items-center gap-1.5 cursor-pointer"
+                title="Sair desta conta para logar ou cadastrar outro usuário"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Trocar de Conta</span>
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Main Content Area */}
       <main className="flex-1">
@@ -304,8 +403,9 @@ function MainLayout() {
         <AuthModal
           initialMode={authModal.mode}
           onClose={() => setAuthModal({ isOpen: false, mode: 'login' })}
-          onSuccess={() => {
+          onSuccess={(loggedInUser) => {
             setAuthModal({ isOpen: false, mode: 'login' });
+            handleAuthSuccess(loggedInUser);
           }}
         />
       )}

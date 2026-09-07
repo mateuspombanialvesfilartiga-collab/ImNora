@@ -4,6 +4,8 @@ import path from 'path';
 import bcrypt from 'bcryptjs';
 
 let db: Database;
+let dbInitPromise: Promise<Database> | null = null;
+let inTransaction = false;
 const DB_FILE_PATH = path.join(process.cwd(), 'data', 'elo_database.sqlite');
 
 // Helper to ensure directory exists
@@ -14,7 +16,7 @@ function ensureDirExists(dirPath: string) {
 }
 
 export function saveDbToDisk() {
-  if (!db) return;
+  if (!db || inTransaction) return;
   try {
     ensureDirExists(path.dirname(DB_FILE_PATH));
     const data = db.export();
@@ -27,81 +29,136 @@ export function saveDbToDisk() {
 
 export async function getDb(): Promise<Database> {
   if (db) return db;
+  if (dbInitPromise) return dbInitPromise;
 
-  const SQL = await initSqlJs();
-  ensureDirExists(path.dirname(DB_FILE_PATH));
+  dbInitPromise = (async () => {
+    const SQL = await initSqlJs();
+    ensureDirExists(path.dirname(DB_FILE_PATH));
 
-  if (fs.existsSync(DB_FILE_PATH)) {
-    try {
-      const fileBuffer = fs.readFileSync(DB_FILE_PATH);
-      db = new SQL.Database(fileBuffer);
-      // Clean up any legacy test/mock properties to ensure only real user properties exist
+    if (fs.existsSync(DB_FILE_PATH)) {
       try {
-        db.run(`
-          DELETE FROM property_features WHERE property_id IN ('prop_1', 'prop_2', 'prop_3');
-          DELETE FROM property_images WHERE property_id IN ('prop_1', 'prop_2', 'prop_3');
-          DELETE FROM seller_applications WHERE property_id IN ('prop_1', 'prop_2', 'prop_3');
-          DELETE FROM conversations WHERE property_id IN ('prop_1', 'prop_2', 'prop_3');
-          DELETE FROM negotiations WHERE property_id IN ('prop_1', 'prop_2', 'prop_3');
-          DELETE FROM property_favorites WHERE property_id IN ('prop_1', 'prop_2', 'prop_3');
-          DELETE FROM properties WHERE id IN ('prop_1', 'prop_2', 'prop_3');
-        `);
-        saveDbToDisk();
-      } catch (cleanErr) {
-        console.warn('Mock properties cleanup notice:', cleanErr);
+        const fileBuffer = fs.readFileSync(DB_FILE_PATH);
+        db = new SQL.Database(fileBuffer);
+        // Clean up all existing profiles and reset database to completely clean state (0 user profiles)
+        try {
+          db.run(`
+            DELETE FROM seller_applications;
+            DELETE FROM negotiations;
+            DELETE FROM messages;
+            DELETE FROM conversations;
+            DELETE FROM property_favorites;
+            DELETE FROM property_features;
+            DELETE FROM property_images;
+            DELETE FROM properties;
+            DELETE FROM seller_verifications;
+            DELETE FROM seller_profiles;
+            DELETE FROM owner_profiles;
+            DELETE FROM buyer_profiles;
+            DELETE FROM admin_users;
+            DELETE FROM refresh_tokens;
+            DELETE FROM users;
+          `);
+          saveDbToDisk();
+        } catch (cleanErr) {
+          console.warn('Database cleanup notice:', cleanErr);
+        }
+        console.log('Loaded SQLite database from disk (reset to 0 user profiles, ready for genuine registrations).');
+        return db;
+      } catch (e) {
+        console.warn('Could not read existing database file, initializing fresh in-memory DB:', e);
       }
-      console.log('Loaded SQLite database from disk (purged of mock properties).');
-      return db;
-    } catch (e) {
-      console.warn('Could not read existing database file, initializing fresh in-memory DB:', e);
     }
-  }
 
-  db = new SQL.Database();
-  initSchema(db);
-  await seedInitialData(db);
-  saveDbToDisk();
-  console.log('Initialized and seeded fresh SQLite database for elo.');
-  return db;
+    db = new SQL.Database();
+    initSchema(db);
+    await seedInitialData(db);
+    saveDbToDisk();
+    console.log('Initialized and seeded fresh SQLite database for elo.');
+    return db;
+  })();
+
+  return dbInitPromise;
 }
 
 export function runQuery(sql: string, params: (string | number | null | boolean)[] = []): void {
+  if (!db) {
+    throw new Error('Database not initialized.');
+  }
   db.run(sql, params as any[]);
-  saveDbToDisk();
+  if (!inTransaction) {
+    saveDbToDisk();
+  }
 }
 
 export function queryOne<T = any>(sql: string, params: (string | number | null | boolean)[] = []): T | null {
+  if (!db) return null;
   const stmt = db.prepare(sql);
-  stmt.bind(params as any[]);
-  if (stmt.step()) {
-    const row = stmt.getAsObject() as T;
+  try {
+    stmt.bind(params as any[]);
+    if (stmt.step()) {
+      return stmt.getAsObject() as T;
+    }
+    return null;
+  } finally {
     stmt.free();
-    return row;
   }
-  stmt.free();
-  return null;
 }
 
 export function queryAll<T = any>(sql: string, params: (string | number | null | boolean)[] = []): T[] {
+  if (!db) return [];
   const stmt = db.prepare(sql);
-  stmt.bind(params as any[]);
-  const rows: T[] = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject() as T);
+  try {
+    stmt.bind(params as any[]);
+    const rows: T[] = [];
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject() as T);
+    }
+    return rows;
+  } finally {
+    stmt.free();
   }
-  stmt.free();
-  return rows;
 }
 
 export function executeTransaction<T>(action: () => T): T {
-  db.run('BEGIN TRANSACTION;');
+  if (!db) {
+    throw new Error('Database not initialized.');
+  }
+
+  // Handle nested transaction execution gracefully
+  if (inTransaction) {
+    return action();
+  }
+
+  inTransaction = true;
+  try {
+    db.run('BEGIN TRANSACTION;');
+  } catch (beginErr) {
+    inTransaction = false;
+    throw beginErr;
+  }
+
   try {
     const result = action();
-    db.run('COMMIT;');
+    try {
+      db.run('COMMIT;');
+    } catch (commitErr) {
+      try {
+        db.run('ROLLBACK;');
+      } catch {
+        // ignore secondary rollback error if already inactive
+      }
+      throw commitErr;
+    }
+    inTransaction = false;
     saveDbToDisk();
     return result;
   } catch (error) {
-    db.run('ROLLBACK;');
+    inTransaction = false;
+    try {
+      db.run('ROLLBACK;');
+    } catch (rollbackErr) {
+      console.warn('Rollback notice (transaction was already inactive or aborted):', rollbackErr);
+    }
     throw error;
   }
 }
@@ -355,9 +412,6 @@ function initSchema(database: Database) {
 
 async function seedInitialData(database: Database) {
   const now = new Date().toISOString();
-  // Hash passwords with bcrypt (rounds: 12)
-  const defaultPasswordHash = await bcrypt.hash('Senha@123', 12);
-  const adminPasswordHash = await bcrypt.hash('Admin@12345', 12);
 
   // 1. Platform Settings
   database.run(`
@@ -368,69 +422,9 @@ async function seedInitialData(database: Database) {
     ('max_seller_commission_percent', 10.0, 'Comissão máxima permitida que o vendedor pode propor (%)', '${now}');
   `);
 
-  // 2. Users (Admin, Owners, Sellers, Buyers)
-  const users = [
-    // Admin
-    { id: 'usr_admin', email: 'admin@elo.com.br', pass: adminPasswordHash, role: 'admin' },
-    // Owners
-    { id: 'usr_owner1', email: 'helena.proprietaria@elo.com.br', pass: defaultPasswordHash, role: 'owner' },
-    { id: 'usr_owner2', email: 'marcos.proprietario@elo.com.br', pass: defaultPasswordHash, role: 'owner' },
-    // Sellers (Autonomous)
-    { id: 'usr_seller1', email: 'carlos.corretor@elo.com.br', pass: defaultPasswordHash, role: 'seller' },
-    { id: 'usr_seller2', email: 'mariana.corretora@elo.com.br', pass: defaultPasswordHash, role: 'seller' },
-    { id: 'usr_seller3', email: 'rodrigo.pendente@elo.com.br', pass: defaultPasswordHash, role: 'seller' }, // Pending approval
-    // Buyers
-    { id: 'usr_buyer1', email: 'fernanda.compradora@elo.com.br', pass: defaultPasswordHash, role: 'buyer' },
-    { id: 'usr_buyer2', email: 'lucas.comprador@elo.com.br', pass: defaultPasswordHash, role: 'buyer' }
-  ];
-
-  for (const u of users) {
-    database.run(
-      `INSERT INTO users (id, email, password_hash, role, is_active, failed_login_attempts, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 1, 0, ?, ?);`,
-      [u.id, u.email, u.pass, u.role, now, now]
-    );
-  }
-
-  // Admin Profile
-  database.run(
-    `INSERT INTO admin_users (id, user_id, access_level, created_at) VALUES ('adm_1', 'usr_admin', 'superadmin', ?);`,
-    [now]
-  );
-
-  // Buyer Profiles
-  database.run(
-    `INSERT INTO buyer_profiles (user_id, full_name, phone, preferences) VALUES
-     ('usr_buyer1', 'Fernanda Lima Alencar', '(11) 98765-4321', 'Apartamentos de 2 a 3 quartos na Zona Sul'),
-     ('usr_buyer2', 'Lucas Gabriel Silva', '(21) 99123-4567', 'Casas com jardim e vaga dupla');`
-  );
-
-  // Owner Profiles
-  database.run(
-    `INSERT INTO owner_profiles (user_id, full_name, phone, document_number) VALUES
-     ('usr_owner1', 'Helena Maria de Souza', '(11) 97654-3210', '123.456.789-00'),
-     ('usr_owner2', 'Marcos Vinícius Costa', '(21) 98888-7777', '987.654.321-99');`
-  );
-
-  // Seller Profiles (Carlos & Mariana are verified with high rep; Rodrigo is pending admin verification)
-  database.run(
-    `INSERT INTO seller_profiles (user_id, full_name, phone, creci_number, creci_state, bio, photo_url, verified_status, rating_avg, reviews_count, sales_count) VALUES
-     ('usr_seller1', 'Carlos Mendes', '(11) 97111-2233', '45210-F', 'SP', 'Especialista em imóveis de alto padrão e negociações ágeis em Pinheiros, Jardins e Vila Mariana. Mais de 12 anos de experiência no mercado autônomo.', 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=300&q=80', 'approved', 4.9, 14, 18),
-     ('usr_seller2', 'Mariana Rocha', '(21) 98222-3344', '38914-F', 'RJ', 'Corretora autônoma focada em experiência transparente, fotografia profissional e conexão humanizada entre proprietários e compradores.', 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80', 'approved', 5.0, 9, 11),
-     ('usr_seller3', 'Rodrigo Lima Santos', '(31) 99333-4455', '67821-F', 'MG', 'Corretor autônomo especializado na Grande BH. Focado em atendimento digital dinâmico.', 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=300&q=80', 'pending', 0.0, 0, 0);`
-  );
-
-  // Seller Verifications
-  database.run(
-    `INSERT INTO seller_verifications (id, seller_id, creci_number, creci_state, document_url, status, admin_notes, submitted_at, reviewed_at, reviewed_by) VALUES
-     ('ver_1', 'usr_seller1', '45210-F', 'SP', 'https://example.com/creci-carlos.pdf', 'approved', 'CRECI ativo no CRECISP verificado.', '${now}', '${now}', 'usr_admin'),
-     ('ver_2', 'usr_seller2', '38914-F', 'RJ', 'https://example.com/creci-mariana.pdf', 'approved', 'CRECI ativo no CRECIRJ verificado.', '${now}', '${now}', 'usr_admin'),
-     ('ver_3', 'usr_seller3', '67821-F', 'MG', 'https://example.com/creci-rodrigo.pdf', 'pending', 'Aguardando validação dos documentos na junta CRECI-MG.', '${now}', NULL, NULL);`
-  );
-
-  // Initial Audit Log
+  // Initial Audit Log (system-level, no users created)
   database.run(`
     INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, details, ip_address, created_at) VALUES
-    ('aud_1', 'usr_admin', 'SYSTEM_INITIALIZATION', 'platform', 'imnora', 'Sistema Imnora inicializado em modo de produção real com zero imóveis fictícios.', '127.0.0.1', '${now}');
+    ('aud_1', NULL, 'SYSTEM_INITIALIZATION', 'platform', 'imnora', 'Banco de dados Imnora inicializado sem nenhum perfil pré-criado.', '127.0.0.1', '${now}');
   `);
 }

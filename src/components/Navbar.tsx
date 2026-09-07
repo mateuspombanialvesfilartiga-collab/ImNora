@@ -126,7 +126,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               {!user && (
                 <button
                   id="nav-login-tab-btn"
-                  onClick={() => onNavigate('login')}
+                  onClick={() => onOpenAuth('login')}
                   className={`transition-colors py-1 flex items-center gap-1.5 ${
                     currentView === 'login'
                       ? 'text-[#FAF8F5] border-b-2 border-[#C5A880] font-semibold'
@@ -442,8 +442,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   id="nav-login-btn"
-                  onClick={() => onNavigate('login')}
-                  className="px-3.5 py-1.5 text-xs font-semibold text-[#D4C3A3] hover:text-[#FAF8F5] transition-colors"
+                  onClick={() => onOpenAuth('login')}
+                  className="px-3.5 py-1.5 text-xs font-semibold text-[#D4C3A3] hover:text-[#FAF8F5] transition-colors cursor-pointer"
                 >
                   Entrar
                 </button>

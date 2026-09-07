@@ -34,6 +34,13 @@ interface ExploreViewProps {
   onNavigate?: (view: string) => void;
 }
 
+interface DynamicCity {
+  city: string;
+  state: string;
+  label: string;
+  count: number;
+}
+
 export const ExploreView: React.FC<ExploreViewProps> = ({
   onSelectProperty,
   onQuickApply,
@@ -43,10 +50,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   onNavigate
 }) => {
   const [properties, setProperties] = useState<Property[]>([]);
+  const [availableCities, setAvailableCities] = useState<DynamicCity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  // Active persona tab for persuasive benefits
-  const [activePersona, setActivePersona] = useState<'owner' | 'seller' | 'buyer'>('owner');
 
   // Filters
   const [search, setSearch] = useState('');
@@ -56,6 +61,16 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [minPrice, setMinPrice] = useState<string>('');
   const [maxPrice, setMaxPrice] = useState<string>('');
   const [minBedrooms, setMinBedrooms] = useState<string>('');
+
+  const fetchCities = async () => {
+    try {
+      const res = await apiRequest<{ cities: DynamicCity[] }>('/api/properties/cities');
+      setAvailableCities(res.cities || []);
+    } catch (err) {
+      console.error('Error fetching dynamic cities:', err);
+      setAvailableCities([]);
+    }
+  };
 
   const fetchProperties = async () => {
     setIsLoading(true);
@@ -85,7 +100,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
   useEffect(() => {
     fetchProperties();
-  }, [representationStatus, propertyType]);
+    fetchCities();
+  }, [representationStatus, propertyType, city]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,294 +120,124 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-10">
       {/* ======================================================== */}
-      {/* 1. HERO BANNER: DARK BLUE & WARM BEIGE PERSUASIVE INTRO */}
+      {/* MOTIVATING HERO & STARTUP PRESENTATION                  */}
       {/* ======================================================== */}
-      <section className="relative rounded-3xl bg-[#081426] border border-[#1A2E4C] text-[#FAF8F5] overflow-hidden shadow-2xl p-6 sm:p-10 lg:p-14">
-        {/* Subtle geometric & light effects */}
-        <div className="absolute top-0 right-0 -mt-16 -mr-16 w-96 h-96 bg-[#C5A880]/15 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="absolute bottom-0 left-1/3 -mb-20 w-80 h-80 bg-[#162D4D]/60 rounded-full blur-3xl pointer-events-none"></div>
-
+      <section className="relative overflow-hidden rounded-3xl bg-[#081426] text-[#FAF8F5] p-6 sm:p-10 lg:p-12 border border-[#1A2E4C] shadow-xl">
         <div className="relative z-10 max-w-4xl space-y-6">
-          {/* Persuasive Tagline Badge */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#0F223D] border border-[#C5A880]/40 text-[#C5A880] text-xs font-semibold tracking-wide shadow-sm">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#0F223D] border border-[#2A446B] text-xs font-semibold text-[#C5A880]">
             <Sparkles className="w-3.5 h-3.5" />
             <span>A Revolução Imobiliária Transparente</span>
           </div>
 
-          {/* Core Compelling Headline */}
-          <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-[#FAF8F5] leading-[1.15]">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-[#FAF8F5] leading-tight sm:leading-tight">
             Venda ou compre seu imóvel sem os <span className="text-[#C5A880]">6% abusivos</span> das imobiliárias tradicionais.
           </h1>
 
-          {/* Persuasive Sub-headline */}
-          <p className="text-base sm:text-lg text-[#D4C3A3] font-normal leading-relaxed max-w-3xl">
-            A <strong>Imnora</strong> conecta você diretamente aos melhores corretores autônomos credenciados pelo <strong>CRECI</strong>. 
-            Eles disputam a representação do seu imóvel oferecendo comissões menores, dedicação exclusiva e agilidade comprovada.
+          <p className="text-sm sm:text-base text-[#D4C8B5] leading-relaxed max-w-3xl">
+            A Imnora conecta proprietários diretamente aos melhores <strong>corretores autônomos credenciados pelo CRECI</strong>.
+            Sem a burocracia ou taxas infladas das grandes imobiliárias: corretores dedicados disputam a representação do seu imóvel
+            com comissões justas e atendimento ágil, enquanto compradores negociam com total segurança jurídica.
           </p>
 
-          {/* Key Value Statistics / Conversion Points */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
-            <div className="bg-[#0F223D]/80 border border-[#1F3759] rounded-2xl p-4 flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-[#C5A880]/20 flex items-center justify-center shrink-0 text-[#C5A880]">
-                <BadgePercent className="w-5 h-5" />
+          {/* Action CTAs */}
+          <div className="flex flex-wrap items-center gap-3 pt-2">
+            <button
+              id="hero-login-btn"
+              onClick={() => onOpenAuth ? onOpenAuth('login') : onNavigate && onNavigate('login')}
+              className="px-6 py-3 bg-[#C5A880] hover:bg-[#b5966d] text-[#081426] font-bold text-xs sm:text-sm rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <span>Acessar Meu Dashboard</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+
+            <button
+              id="hero-owner-cta"
+              onClick={() => {
+                if (userRole === 'owner' && onOpenNewProperty) {
+                  onOpenNewProperty();
+                } else if (onOpenAuth) {
+                  onOpenAuth('register', 'owner');
+                }
+              }}
+              className="px-5 py-3 bg-[#0F223D] hover:bg-[#162D4D] text-[#FAF8F5] border border-[#2A446B] font-bold text-xs sm:text-sm rounded-xl transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <PlusCircle className="w-4 h-4 text-[#C5A880]" />
+              <span>Anunciar Imóvel</span>
+            </button>
+
+            <button
+              id="hero-seller-cta"
+              onClick={() => onOpenAuth ? onOpenAuth('register', 'seller') : onNavigate && onNavigate('login')}
+              className="px-5 py-3 bg-transparent hover:bg-white/5 text-[#FAF8F5] font-semibold text-xs sm:text-sm rounded-xl transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <Briefcase className="w-4 h-4 text-[#C5A880]" />
+              <span>Sou Corretor Autônomo (CRECI)</span>
+            </button>
+          </div>
+
+          {/* 3 Pillars */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6 border-t border-[#1A2E4C]">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-[#0F223D] text-[#C5A880] shrink-0">
+                <Percent className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-lg font-bold text-[#FAF8F5]">Economia de até 40%</p>
-                <p className="text-xs text-[#D4C3A3]">Comissões livres a partir de 3%</p>
+                <h4 className="text-xs font-bold text-[#FAF8F5]">Economia de até 40%</h4>
+                <p className="text-[11px] text-[#A39682] mt-0.5">Comissões a partir de 3% disputadas entre corretores dedicados.</p>
               </div>
             </div>
 
-            <div className="bg-[#0F223D]/80 border border-[#1F3759] rounded-2xl p-4 flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-[#C5A880]/20 flex items-center justify-center shrink-0 text-[#C5A880]">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-[#0F223D] text-[#C5A880] shrink-0">
                 <ShieldCheck className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-lg font-bold text-[#FAF8F5]">100% Auditado</p>
-                <p className="text-xs text-[#D4C3A3]">Corretores com CRECI validado</p>
+                <h4 className="text-xs font-bold text-[#FAF8F5]">100% Auditado (CRECI)</h4>
+                <p className="text-[11px] text-[#A39682] mt-0.5">Apenas corretores com registro profissional ativo e histórico conferido.</p>
               </div>
             </div>
 
-            <div className="bg-[#0F223D]/80 border border-[#1F3759] rounded-2xl p-4 flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-[#C5A880]/20 flex items-center justify-center shrink-0 text-[#C5A880]">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-[#0F223D] text-[#C5A880] shrink-0">
                 <Clock className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-lg font-bold text-[#FAF8F5]">Venda Mais Rápida</p>
-                <p className="text-xs text-[#D4C3A3]">Corretores focados e motivados</p>
+                <h4 className="text-xs font-bold text-[#FAF8F5]">Venda Mais Rápida</h4>
+                <p className="text-[11px] text-[#A39682] mt-0.5">Atendimento próximo, sem os processos lentos das imobiliárias comuns.</p>
               </div>
             </div>
-          </div>
-
-          {/* Primary Action Buttons */}
-          <div className="flex flex-wrap items-center gap-3.5 pt-2">
-            <button
-              id="hero-publish-property-btn"
-              onClick={() => {
-                if (onOpenNewProperty) onOpenNewProperty();
-                else if (onOpenAuth) onOpenAuth('login');
-              }}
-              className="px-6 py-3.5 bg-[#C5A880] hover:bg-[#B89563] text-[#081426] font-bold text-sm rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer hover:scale-[1.02]"
-            >
-              <PlusCircle className="w-4 h-4" />
-              Anunciar Meu Imóvel Gratuitamente
-            </button>
-
-            <button
-              id="hero-register-seller-btn"
-              onClick={() => {
-                if (onOpenAuth) onOpenAuth('register', 'seller');
-                else if (onNavigate) onNavigate('login');
-              }}
-              className="px-5 py-3.5 bg-[#0F223D] hover:bg-[#162D4D] text-[#FAF8F5] border border-[#2A446B] font-semibold text-sm rounded-xl transition-colors flex items-center gap-2 cursor-pointer"
-            >
-              <Briefcase className="w-4 h-4 text-[#C5A880]" />
-              Quero Vender como Corretor Autônomo
-            </button>
-
-            <button
-              id="hero-learn-more-btn"
-              onClick={() => onNavigate && onNavigate('how_it_works')}
-              className="px-4 py-3.5 text-[#D4C3A3] hover:text-[#FAF8F5] text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <span>Entenda como funciona</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
           </div>
         </div>
       </section>
 
-      {/* ======================================================== */}
-      {/* 2. PERSUASIVE VALUE PILLARS: WHY CHOOSE IMNORA */}
-      {/* ======================================================== */}
-      <section className="space-y-6">
-        <div className="text-center max-w-2xl mx-auto space-y-2">
-          <div className="inline-block px-3 py-1 rounded-full bg-[#EFE9DE] text-[#081426] text-xs font-bold uppercase tracking-wider">
-            Vantagens Exclusivas Imnora
-          </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-[#081426]">
-            Por que usar a Imnora em vez de uma imobiliária tradicional?
+      {/* Header: Clean & Direct Real Estate Catalog */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#E5D9C5]">
+        <div>
+          <h2 className="text-xl sm:text-2xl font-extrabold text-[#081426] tracking-tight">
+            Catálogo de Imóveis Reais
           </h2>
-          <p className="text-sm text-[#5C5346]">
-            Descubra por que proprietários, corretores autônomos e compradores estão migrando para o nosso ecossistema.
+          <p className="text-xs text-[#5C5346] mt-0.5">
+            Imóveis anunciados com corretores autônomos credenciados pelo CRECI.
           </p>
         </div>
-
-        {/* Persona Selector Tabs */}
-        <div className="flex justify-center">
-          <div className="inline-flex p-1.5 bg-[#EFE9DE] rounded-2xl gap-1 border border-[#E2D7C5]">
-            <button
-              onClick={() => setActivePersona('owner')}
-              className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
-                activePersona === 'owner'
-                  ? 'bg-[#081426] text-[#FAF8F5] shadow-md'
-                  : 'text-[#5C5346] hover:text-[#081426]'
-              }`}
-            >
-              <Building2 className="w-4 h-4 text-[#C5A880]" />
-              Para Proprietários
-            </button>
-            <button
-              onClick={() => setActivePersona('seller')}
-              className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
-                activePersona === 'seller'
-                  ? 'bg-[#081426] text-[#FAF8F5] shadow-md'
-                  : 'text-[#5C5346] hover:text-[#081426]'
-              }`}
-            >
-              <Briefcase className="w-4 h-4 text-[#C5A880]" />
-              Para Corretores Autônomos
-            </button>
-            <button
-              onClick={() => setActivePersona('buyer')}
-              className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
-                activePersona === 'buyer'
-                  ? 'bg-[#081426] text-[#FAF8F5] shadow-md'
-                  : 'text-[#5C5346] hover:text-[#081426]'
-              }`}
-            >
-              <Users className="w-4 h-4 text-[#C5A880]" />
-              Para Compradores
-            </button>
-          </div>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => {
+              if (onOpenNewProperty) onOpenNewProperty();
+              else if (onOpenAuth) onOpenAuth('login');
+            }}
+            className="px-4 py-2.5 bg-[#081426] hover:bg-[#122744] text-[#FAF8F5] text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-2 cursor-pointer"
+          >
+            <PlusCircle className="w-4 h-4 text-[#C5A880]" />
+            Anunciar Imóvel
+          </button>
         </div>
-
-        {/* Dynamic Persona Benefits Showcase */}
-        <div className="bg-[#FAF8F5] border border-[#E5D9C5] rounded-3xl p-6 sm:p-8 lg:p-10 shadow-sm">
-          {activePersona === 'owner' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-2xl border border-[#EFE9DE] space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-[#081426] text-[#C5A880] flex items-center justify-center font-bold">
-                  1
-                </div>
-                <h3 className="font-bold text-[#081426] text-base">Comissão Justa e Negociável</h3>
-                <p className="text-xs text-[#5C5346] leading-relaxed">
-                  Em imobiliárias convencionais, a comissão é engessada em 6%. Na Imnora, você recebe propostas com taxas a partir de 3% e escolhe quem melhor valoriza seu imóvel.
-                </p>
-                <div className="pt-2 text-xs font-semibold text-[#8C6B3A] flex items-center gap-1">
-                  <Check className="w-4 h-4 text-[#C5A880]" /> Economia de R$ 15.000 a R$ 60.000
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-2xl border border-[#EFE9DE] space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-[#081426] text-[#C5A880] flex items-center justify-center font-bold">
-                  2
-                </div>
-                <h3 className="font-bold text-[#081426] text-base">Corretor com Dedicação Real</h3>
-                <p className="text-xs text-[#5C5346] leading-relaxed">
-                  O corretor que você escolhe ganha a oportunidade com exclusividade pactuada. Ele não deixa seu anúncio esquecido; ele investe tempo e tráfego qualificado para vender logo.
-                </p>
-                <div className="pt-2 text-xs font-semibold text-[#8C6B3A] flex items-center gap-1">
-                  <Check className="w-4 h-4 text-[#C5A880]" /> Atendimento personalizado e direto
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-2xl border border-[#EFE9DE] space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-[#081426] text-[#C5A880] flex items-center justify-center font-bold">
-                  3
-                </div>
-                <h3 className="font-bold text-[#081426] text-base">Anúncio Grátis & Risco Zero</h3>
-                <p className="text-xs text-[#5C5346] leading-relaxed">
-                  Você não paga nada para publicar seu imóvel ou receber propostas. Os honorários só são liquidados quando a transação for assinada com o comprador em cartório.
-                </p>
-                <div className="pt-2 text-xs font-semibold text-[#8C6B3A] flex items-center gap-1">
-                  <Check className="w-4 h-4 text-[#C5A880]" /> Pagamento 100% no êxito da venda
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activePersona === 'seller' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-2xl border border-[#EFE9DE] space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-[#081426] text-[#C5A880] flex items-center justify-center font-bold">
-                  1
-                </div>
-                <h3 className="font-bold text-[#081426] text-base">100% da Comissão é Sua</h3>
-                <p className="text-xs text-[#5C5346] leading-relaxed">
-                  Pare de repassar 50% dos seus honorários para grandes redes imobiliárias. Na Imnora, você negocia sua taxa direto com o dono e fica com o fruto do seu trabalho.
-                </p>
-                <div className="pt-2 text-xs font-semibold text-[#8C6B3A] flex items-center gap-1">
-                  <Check className="w-4 h-4 text-[#C5A880]" /> O dobro de renda por venda fechada
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-2xl border border-[#EFE9DE] space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-[#081426] text-[#C5A880] flex items-center justify-center font-bold">
-                  2
-                </div>
-                <h3 className="font-bold text-[#081426] text-base">Acesso Direto a Imóveis Reais</h3>
-                <p className="text-xs text-[#5C5346] leading-relaxed">
-                  Receba alertas de novos imóveis cadastrados pelos proprietários na sua região. Analise fotos, especificações e envie sua proposta de venda em minutos.
-                </p>
-                <div className="pt-2 text-xs font-semibold text-[#8C6B3A] flex items-center gap-1">
-                  <Check className="w-4 h-4 text-[#C5A880]" /> Captação qualificada sem porta a porta
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-2xl border border-[#EFE9DE] space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-[#081426] text-[#C5A880] flex items-center justify-center font-bold">
-                  3
-                </div>
-                <h3 className="font-bold text-[#081426] text-base">Construa sua Reputação Digital</h3>
-                <p className="text-xs text-[#5C5346] leading-relaxed">
-                  Seu perfil exibe seu número de CRECI auditado, avaliações 5 estrelas e vendas concluídas. Quanto melhor seu serviço, mais proprietários escolherão você.
-                </p>
-                <div className="pt-2 text-xs font-semibold text-[#8C6B3A] flex items-center gap-1">
-                  <Check className="w-4 h-4 text-[#C5A880]" /> Perfil profissional com autoridade
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activePersona === 'buyer' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-2xl border border-[#EFE9DE] space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-[#081426] text-[#C5A880] flex items-center justify-center font-bold">
-                  1
-                </div>
-                <h3 className="font-bold text-[#081426] text-base">Zero Imóveis Falsos</h3>
-                <p className="text-xs text-[#5C5346] leading-relaxed">
-                  Chega de contatar anúncios de imóveis que já foram vendidos ou fotos falsas para atrair cliques. Na Imnora, cada imóvel é cadastrado pelo proprietário real com checagem de dados.
-                </p>
-                <div className="pt-2 text-xs font-semibold text-[#8C6B3A] flex items-center gap-1">
-                  <Check className="w-4 h-4 text-[#C5A880]" /> Dados reais e atualizados
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-2xl border border-[#EFE9DE] space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-[#081426] text-[#C5A880] flex items-center justify-center font-bold">
-                  2
-                </div>
-                <h3 className="font-bold text-[#081426] text-base">Atendimento Rápido e Humano</h3>
-                <p className="text-xs text-[#5C5346] leading-relaxed">
-                  Fale diretamente com o corretor responsável pelo chat seguro. Tire dúvidas, agende visitas com rapidez e receba suporte dedicado até a entrega das chaves.
-                </p>
-                <div className="pt-2 text-xs font-semibold text-[#8C6B3A] flex items-center gap-1">
-                  <Check className="w-4 h-4 text-[#C5A880]" /> Sem robôs ou esperas burocráticas
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-2xl border border-[#EFE9DE] space-y-3">
-                <div className="w-10 h-10 rounded-xl bg-[#081426] text-[#C5A880] flex items-center justify-center font-bold">
-                  3
-                </div>
-                <h3 className="font-bold text-[#081426] text-base">Segurança Jurídica Completa</h3>
-                <p className="text-xs text-[#5C5346] leading-relaxed">
-                  Corretores com inscrição ativa no CRECI e orientações para certidões negativas, contratos digitais e validações cartorárias seguras.
-                </p>
-                <div className="pt-2 text-xs font-semibold text-[#8C6B3A] flex items-center gap-1">
-                  <Check className="w-4 h-4 text-[#C5A880]" /> Total proteção para seu investimento
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
+      </div>
 
       {/* ======================================================== */}
-      {/* 3. SEARCH & FILTER BAR                                  */}
+      {/* 1. SEARCH & FILTER BAR                                  */}
       {/* ======================================================== */}
       <section className="space-y-4">
         <div className="bg-[#FAF8F5] rounded-2xl border border-[#E5D9C5] p-4 sm:p-5 shadow-xs space-y-4">
@@ -472,14 +318,25 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               </select>
 
               <select
+                id="filter-city-select"
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
-                className="px-3 py-1.5 bg-white border border-[#E2D7C5] rounded-xl text-xs text-[#081426] focus:outline-none"
+                disabled={availableCities.length === 0}
+                className="px-3 py-1.5 bg-white border border-[#E2D7C5] rounded-xl text-xs text-[#081426] focus:outline-none disabled:bg-[#F0EAE1] disabled:text-[#857B6E] disabled:cursor-not-allowed"
+                title={availableCities.length === 0 ? 'Nenhum imóvel cadastrado no momento' : 'Filtrar por cidade'}
               >
-                <option value="">Cidade: Todas</option>
-                <option value="São Paulo">São Paulo</option>
-                <option value="Campinas">Campinas</option>
-                <option value="Rio de Janeiro">Rio de Janeiro</option>
+                {availableCities.length === 0 ? (
+                  <option value="">Cidades (Nenhum imóvel cadastrado)</option>
+                ) : (
+                  <>
+                    <option value="">Todas as Cidades ({availableCities.length})</option>
+                    {availableCities.map((item) => (
+                      <option key={`${item.city}-${item.state}`} value={item.city}>
+                        {item.label} ({item.count} {item.count === 1 ? 'imóvel' : 'imóveis'})
+                      </option>
+                    ))}
+                  </>
+                )}
               </select>
 
               {(search || propertyType || city || representationStatus !== 'all') && (

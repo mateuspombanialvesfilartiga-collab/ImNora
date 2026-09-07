@@ -24,7 +24,7 @@ const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 const registerSchema = z.object({
   email: z.string().email('E-mail em formato inválido.').max(120),
   password: z.string().regex(passwordRegex, 'A senha deve ter no mínimo 8 caracteres, incluindo pelo menos uma letra maiúscula, uma minúscula e um número.'),
-  role: z.enum(['buyer', 'seller', 'owner']),
+  role: z.enum(['buyer', 'seller', 'owner', 'admin']),
   fullName: z.string().min(2, 'Nome deve ter no mínimo 2 caracteres.').max(100),
   phone: z.string().min(8, 'Telefone inválido.').max(25).optional(),
   // Specific to seller
@@ -89,6 +89,12 @@ router.post('/register', rateLimiter(5, 60 * 1000), validateBody(registerSchema)
         `INSERT INTO seller_verifications (id, seller_id, creci_number, creci_state, document_url, status, admin_notes, submitted_at)
          VALUES (?, ?, ?, ?, NULL, 'pending', 'Aguardando validação da documentação pelo administrador', ?)`,
         [verId, userId, creciNumber!.toUpperCase(), creciState!.toUpperCase(), now]
+      );
+    } else if (role === 'admin') {
+      const adminId = 'adm_' + Date.now();
+      runQuery(
+        `INSERT INTO admin_users (id, user_id, access_level, created_at) VALUES (?, ?, 'superadmin', ?)`,
+        [adminId, userId, now]
       );
     }
   });
@@ -220,6 +226,19 @@ router.post('/login', rateLimiter(5, 60 * 1000), validateBody(loginSchema), asyn
   });
 });
 
+// Demo endpoints retired: Only genuine registered profiles connected to database are supported
+router.post('/quick-role-switch', (req: Request, res: Response) => {
+  return res.status(400).json({
+    error: 'Perfis de demonstração foram desativados. Cadastre um perfil verídico no sistema para acessar seu dashboard.'
+  });
+});
+
+router.post('/demo-login', (req: Request, res: Response) => {
+  return res.status(400).json({
+    error: 'Perfis de demonstração foram desativados. Cadastre um perfil verídico no sistema para acessar seu dashboard.'
+  });
+});
+
 // Refresh token rotation
 router.post('/refresh', async (req: Request, res: Response) => {
   const rawToken = req.cookies?.elo_refresh_token;
@@ -309,76 +328,6 @@ router.get('/me', authenticate, (req: Request, res: Response) => {
       sellerVerifiedStatus: u.sellerVerifiedStatus,
       unreadNotifications: notifCount?.count || 0,
       profile: profileData || {}
-    }
-  });
-});
-
-// Demo Account Quick Switcher (Enables effortless preview and testing of all roles)
-router.post('/demo-login', async (req: Request, res: Response) => {
-  const { demoRole } = req.body;
-  const demoAccounts: Record<string, string> = {
-    owner: 'helena.proprietaria@elo.com.br',
-    seller: 'carlos.corretor@elo.com.br',
-    seller_pending: 'rodrigo.pendente@elo.com.br',
-    buyer: 'fernanda.compradora@elo.com.br',
-    admin: 'admin@elo.com.br'
-  };
-
-  const targetEmail = demoAccounts[demoRole];
-  if (!targetEmail) {
-    return res.status(400).json({ error: 'Perfil de demonstração inválido.' });
-  }
-
-  const user = queryOne<{
-    id: string;
-    email: string;
-    role: 'buyer' | 'seller' | 'owner' | 'admin';
-    is_active: number;
-  }>(`SELECT id, email, role, is_active FROM users WHERE email = ?`, [targetEmail]);
-
-  if (!user) {
-    return res.status(404).json({ error: 'Conta de demonstração não encontrada.' });
-  }
-
-  let fullName = '';
-  let sellerVerifiedStatus: any;
-
-  if (user.role === 'buyer') {
-    const b = queryOne<{ full_name: string }>(`SELECT full_name FROM buyer_profiles WHERE user_id = ?`, [user.id]);
-    fullName = b?.full_name || '';
-  } else if (user.role === 'owner') {
-    const o = queryOne<{ full_name: string }>(`SELECT full_name FROM owner_profiles WHERE user_id = ?`, [user.id]);
-    fullName = o?.full_name || '';
-  } else if (user.role === 'seller') {
-    const s = queryOne<{ full_name: string; verified_status: any }>(
-      `SELECT full_name, verified_status FROM seller_profiles WHERE user_id = ?`,
-      [user.id]
-    );
-    fullName = s?.full_name || '';
-    sellerVerifiedStatus = s?.verified_status;
-  } else if (user.role === 'admin') {
-    fullName = 'Administrador do elo';
-  }
-
-  const accessToken = generateAccessToken({ userId: user.id, role: user.role });
-  const { rawToken, tokenHash, expiresAt } = generateRefreshToken(user.id);
-  const now = new Date().toISOString();
-
-  runQuery(
-    `INSERT INTO refresh_tokens (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)`,
-    [tokenHash, user.id, expiresAt, now]
-  );
-
-  setRefreshTokenCookie(res, rawToken);
-
-  return res.json({
-    token: accessToken,
-    user: {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      fullName,
-      sellerVerifiedStatus
     }
   });
 });

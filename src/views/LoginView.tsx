@@ -14,7 +14,8 @@ import {
   ArrowRight,
   Eye,
   EyeOff,
-  ShieldCheck
+  ShieldCheck,
+  Database
 } from 'lucide-react';
 
 interface LoginViewProps {
@@ -23,9 +24,9 @@ interface LoginViewProps {
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, initialMode = 'login' }) => {
-  const { user, isAuthenticated, login, register, logout } = useAuth();
+  const { user, isAuthenticated, login, register, logout, switchRole } = useAuth();
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
-  const [role, setRole] = useState<'buyer' | 'seller' | 'owner'>('buyer');
+  const [role, setRole] = useState<'buyer' | 'seller' | 'owner' | 'admin'>('buyer');
 
   // Form states
   const [email, setEmail] = useState('');
@@ -41,6 +42,14 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, initialMode = 
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  const redirectToRoleDashboard = (targetRole: string) => {
+    if (targetRole === 'seller') onNavigate('seller_dashboard');
+    else if (targetRole === 'buyer') onNavigate('buyer_dashboard');
+    else if (targetRole === 'owner') onNavigate('owner_dashboard');
+    else if (targetRole === 'admin') onNavigate('admin_panel');
+    else onNavigate('explore');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -49,13 +58,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, initialMode = 
 
     try {
       if (mode === 'login') {
-        await login(email, password);
-        setSuccessMessage('Login realizado com sucesso!');
+        const loggedUser = await login(email, password);
+        setSuccessMessage('Login realizado com sucesso! Acessando dashboard...');
         setTimeout(() => {
-          onNavigate('explore');
-        }, 500);
+          redirectToRoleDashboard(loggedUser.role);
+        }, 400);
       } else {
-        await register({
+        const newUser = await register({
           email,
           password,
           role,
@@ -65,12 +74,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, initialMode = 
           creciState: role === 'seller' ? creciState : undefined,
           bio: role === 'seller' ? bio : undefined
         });
-        setSuccessMessage('Conta criada com sucesso!');
+        setSuccessMessage('Conta criada com sucesso! Acessando dashboard...');
         setTimeout(() => {
-          if (role === 'owner') onNavigate('owner_dashboard');
-          else if (role === 'seller') onNavigate('seller_dashboard');
-          else onNavigate('explore');
-        }, 500);
+          redirectToRoleDashboard(newUser.role);
+        }, 400);
       }
     } catch (err: any) {
       setError(err.message || 'Erro ao realizar operação. Verifique suas credenciais.');
@@ -225,6 +232,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, initialMode = 
           </div>
         )}
 
+        {/* Database Notice */}
+        <div className="p-3.5 bg-amber-50/70 border border-amber-200/80 rounded-2xl text-xs text-amber-900 flex items-start gap-2.5">
+          <Database className="w-4 h-4 shrink-0 text-amber-700 mt-0.5" />
+          <div className="leading-relaxed">
+            <span className="font-bold">Banco de Dados Ativo: </span>
+            {mode === 'login'
+              ? 'Todos os acessos são autenticados diretamente no banco de dados SQLite persistente. Se você ainda não possui um cadastro, clique em Criar Conta para registrar seu perfil real.'
+              : 'Preencha seus dados reais abaixo para criar sua conta. Seu perfil será registrado no banco de dados para acesso imediato ao seu respectivo painel.'}
+          </div>
+        </div>
+
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Registration Role Selection */}
@@ -233,47 +251,61 @@ export const LoginView: React.FC<LoginViewProps> = ({ onNavigate, initialMode = 
               <label className="text-xs font-bold text-slate-900 block">
                 Escolha seu Tipo de Usuário (Obrigatório)
               </label>
-              <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <button
                   type="button"
                   onClick={() => setRole('buyer')}
-                  className={`p-3 rounded-2xl border text-left transition-all ${
+                  className={`p-2.5 rounded-2xl border text-left transition-all ${
                     role === 'buyer'
                       ? 'border-sky-500 bg-sky-50/70 ring-2 ring-sky-500'
                       : 'border-slate-200 hover:border-slate-300'
                   }`}
                 >
-                  <Home className={`w-5 h-5 mb-1 ${role === 'buyer' ? 'text-sky-600' : 'text-slate-400'}`} />
+                  <Home className={`w-4 h-4 mb-1 ${role === 'buyer' ? 'text-sky-600' : 'text-slate-400'}`} />
                   <div className="text-xs font-bold text-slate-900">Comprador</div>
-                  <div className="text-[11px] text-slate-500 leading-tight">Buscar & visitar imóveis</div>
+                  <div className="text-[10px] text-slate-500 leading-tight">Buscar & visitar imóveis</div>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setRole('seller')}
-                  className={`p-3 rounded-2xl border text-left transition-all ${
+                  className={`p-2.5 rounded-2xl border text-left transition-all ${
                     role === 'seller'
                       ? 'border-amber-500 bg-amber-50/70 ring-2 ring-amber-500'
                       : 'border-slate-200 hover:border-slate-300'
                   }`}
                 >
-                  <Briefcase className={`w-5 h-5 mb-1 ${role === 'seller' ? 'text-amber-600' : 'text-slate-400'}`} />
+                  <Briefcase className={`w-4 h-4 mb-1 ${role === 'seller' ? 'text-amber-600' : 'text-slate-400'}`} />
                   <div className="text-xs font-bold text-slate-900">Corretor</div>
-                  <div className="text-[11px] text-slate-500 leading-tight">Candidatar com CRECI</div>
+                  <div className="text-[10px] text-slate-500 leading-tight">Candidatar com CRECI</div>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setRole('owner')}
-                  className={`p-3 rounded-2xl border text-left transition-all ${
+                  className={`p-2.5 rounded-2xl border text-left transition-all ${
                     role === 'owner'
                       ? 'border-emerald-500 bg-emerald-50/70 ring-2 ring-emerald-500'
                       : 'border-slate-200 hover:border-slate-300'
                   }`}
                 >
-                  <KeyRound className={`w-5 h-5 mb-1 ${role === 'owner' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                  <KeyRound className={`w-4 h-4 mb-1 ${role === 'owner' ? 'text-emerald-600' : 'text-slate-400'}`} />
                   <div className="text-xs font-bold text-slate-900">Proprietário</div>
-                  <div className="text-[11px] text-slate-500 leading-tight">Anunciar & escolher corretor</div>
+                  <div className="text-[10px] text-slate-500 leading-tight">Anunciar imóveis</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setRole('admin')}
+                  className={`p-2.5 rounded-2xl border text-left transition-all ${
+                    role === 'admin'
+                      ? 'border-purple-500 bg-purple-50/70 ring-2 ring-purple-500'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <ShieldCheck className={`w-4 h-4 mb-1 ${role === 'admin' ? 'text-purple-600' : 'text-slate-400'}`} />
+                  <div className="text-xs font-bold text-slate-900">Admin</div>
+                  <div className="text-[10px] text-slate-500 leading-tight">Auditoria & gestão</div>
                 </button>
               </div>
             </div>

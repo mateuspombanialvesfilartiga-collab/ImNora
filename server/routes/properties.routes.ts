@@ -70,6 +70,31 @@ router.get('/', (req: Request, res: Response) => {
   return res.json({ properties });
 });
 
+// GET /api/properties/cities: Dynamically returns distinct cities from registered properties
+router.get('/cities', (req: Request, res: Response) => {
+  const rows = queryAll<{ city: string; state: string; count: number }>(`
+    SELECT
+      TRIM(city) as city,
+      TRIM(state) as state,
+      COUNT(*) as count
+    FROM properties
+    WHERE city IS NOT NULL
+      AND TRIM(city) != ''
+      AND status NOT IN ('draft', 'paused')
+    GROUP BY TRIM(LOWER(city)), TRIM(UPPER(state))
+    ORDER BY city ASC
+  `);
+
+  const cities = rows.map(r => ({
+    city: r.city,
+    state: r.state || '',
+    label: r.state ? `${r.city} - ${r.state}` : r.city,
+    count: r.count
+  }));
+
+  return res.json({ cities });
+});
+
 // GET /api/properties/:id: Detail view
 router.get('/:id', validateParamId('id'), (req: Request, res: Response) => {
   const propertyId = req.params.id;

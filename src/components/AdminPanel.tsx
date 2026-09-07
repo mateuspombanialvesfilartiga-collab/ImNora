@@ -15,15 +15,25 @@ import {
   Clock,
   ArrowUpRight,
   RefreshCw,
-  Sliders
+  Sliders,
+  Database,
+  Search,
+  Mail,
+  Phone,
+  UserCheck,
+  HardDrive
 } from 'lucide-react';
 
 export const AdminPanel: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'verifications' | 'settings' | 'security_tests' | 'audit_logs'>('security_tests');
+  const [activeTab, setActiveTab] = useState<'database_users' | 'security_tests' | 'verifications' | 'settings' | 'audit_logs'>('database_users');
   const [metrics, setMetrics] = useState<any>(null);
   const [verifications, setVerifications] = useState<any[]>([]);
   const [settings, setSettings] = useState<PlatformSetting[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [dbUsers, setDbUsers] = useState<any[]>([]);
+  const [dbStats, setDbStats] = useState<any>(null);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'seller' | 'buyer' | 'owner' | 'admin'>('all');
   const [testResults, setTestResults] = useState<SecurityTestResult[]>([]);
   const [isRunningTests, setIsRunningTests] = useState(false);
   const [testsSummary, setTestsSummary] = useState<{ allPassed: boolean; total: number; passed: number } | null>(null);
@@ -33,16 +43,20 @@ export const AdminPanel: React.FC = () => {
   const fetchMetricsAndData = async () => {
     setIsLoading(true);
     try {
-      const [mRes, vRes, sRes, lRes] = await Promise.all([
-        apiRequest('/api/admin/metrics'),
-        apiRequest('/api/admin/verifications'),
-        apiRequest('/api/admin/settings'),
-        apiRequest('/api/admin/audit-logs')
+      const [mRes, vRes, sRes, lRes, uRes, dbRes] = await Promise.all([
+        apiRequest<any>('/api/admin/metrics'),
+        apiRequest<any>('/api/admin/verifications'),
+        apiRequest<any>('/api/admin/settings'),
+        apiRequest<any>('/api/admin/audit-logs'),
+        apiRequest<any>('/api/admin/users').catch(() => ({ users: [] })),
+        apiRequest<any>('/api/admin/database-stats').catch(() => ({ stats: null }))
       ]);
       setMetrics(mRes.metrics);
       setVerifications(vRes.verifications);
       setSettings(sRes.settings);
       setAuditLogs(lRes.auditLogs);
+      if (uRes?.users) setDbUsers(uRes.users);
+      if (dbRes?.stats) setDbStats(dbRes.stats);
     } catch (err: any) {
       console.error('Error fetching admin data:', err);
     } finally {
@@ -190,17 +204,32 @@ export const AdminPanel: React.FC = () => {
       )}
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 gap-4 text-xs font-bold">
+      <div className="flex flex-wrap border-b border-slate-200 gap-4 text-xs font-bold">
+        <button
+          onClick={() => setActiveTab('database_users')}
+          className={`pb-3 flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
+            activeTab === 'database_users'
+              ? 'border-purple-700 text-purple-700 font-extrabold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Database className="w-4 h-4 text-purple-600" />
+          Perfis Reais no Banco de Dados
+          <span className="px-2 py-0.5 rounded-full text-[10px] bg-purple-100 text-purple-800 font-bold">
+            {dbUsers.length} Cadastros
+          </span>
+        </button>
+
         <button
           onClick={() => setActiveTab('security_tests')}
-          className={`pb-3 flex items-center gap-2 border-b-2 transition-colors ${
+          className={`pb-3 flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
             activeTab === 'security_tests'
               ? 'border-purple-700 text-purple-700'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
           <ShieldCheck className="w-4 h-4" />
-          Testes Automatizados de Segurança (Seção 11.9)
+          Testes de Segurança (Seção 11.9)
           {testsSummary && (
             <span className={`px-2 py-0.5 rounded-full text-[10px] ${testsSummary.allPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
               {testsSummary.passed}/{testsSummary.total} OK
@@ -210,7 +239,7 @@ export const AdminPanel: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('verifications')}
-          className={`pb-3 flex items-center gap-2 border-b-2 transition-colors ${
+          className={`pb-3 flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
             activeTab === 'verifications'
               ? 'border-purple-700 text-purple-700'
               : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -227,19 +256,19 @@ export const AdminPanel: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('settings')}
-          className={`pb-3 flex items-center gap-2 border-b-2 transition-colors ${
+          className={`pb-3 flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
             activeTab === 'settings'
               ? 'border-purple-700 text-purple-700'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
           <Sliders className="w-4 h-4" />
-          Taxas & Parâmetros da Plataforma
+          Taxas & Parâmetros
         </button>
 
         <button
           onClick={() => setActiveTab('audit_logs')}
-          className={`pb-3 flex items-center gap-2 border-b-2 transition-colors ${
+          className={`pb-3 flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
             activeTab === 'audit_logs'
               ? 'border-purple-700 text-purple-700'
               : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -249,6 +278,227 @@ export const AdminPanel: React.FC = () => {
           Auditoria de Segurança
         </button>
       </div>
+
+      {/* Tab 0: Real Registered Profiles in Database */}
+      {activeTab === 'database_users' && (
+        <div className="space-y-6">
+          {/* Database Summary Bar */}
+          <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <HardDrive className="w-4 h-4 text-purple-400" />
+                <span className="text-xs font-bold text-purple-300 uppercase tracking-wide">
+                  Banco de Dados SQLite Persistente
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
+                  Online & Operacional
+                </span>
+              </div>
+              <p className="text-xs text-slate-300">
+                Todos os perfis abaixo foram cadastrados legitimamente na plataforma e persistem no banco de dados. Perfis de demonstração foram completamente expurgados.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={fetchMetricsAndData}
+                disabled={isLoading}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-medium transition-colors flex items-center gap-1.5 border border-slate-700 cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                Atualizar Banco
+              </button>
+            </div>
+          </div>
+
+          {/* Role Counts Badges */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="text-[11px] font-medium text-slate-500">Vendedores Autônomos</div>
+              <div className="text-xl font-black text-slate-900 mt-0.5">
+                {dbStats?.sellersCount ?? dbUsers.filter((u) => u.role === 'seller').length}
+              </div>
+              <div className="text-[10px] text-purple-600 font-semibold">Corretores com CRECI</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="text-[11px] font-medium text-slate-500">Compradores</div>
+              <div className="text-xl font-black text-slate-900 mt-0.5">
+                {dbStats?.buyersCount ?? dbUsers.filter((u) => u.role === 'buyer').length}
+              </div>
+              <div className="text-[10px] text-sky-600 font-semibold">Buscando imóveis</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="text-[11px] font-medium text-slate-500">Proprietários</div>
+              <div className="text-xl font-black text-slate-900 mt-0.5">
+                {dbStats?.ownersCount ?? dbUsers.filter((u) => u.role === 'owner').length}
+              </div>
+              <div className="text-[10px] text-amber-600 font-semibold">Imóveis cadastrados</div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
+              <div className="text-[11px] font-medium text-slate-500">Administradores</div>
+              <div className="text-xl font-black text-slate-900 mt-0.5">
+                {dbStats?.adminsCount ?? dbUsers.filter((u) => u.role === 'admin').length}
+              </div>
+              <div className="text-[10px] text-slate-600 font-semibold">Gestão & Auditoria</div>
+            </div>
+          </div>
+
+          {/* Filters and Search Bar */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+              <input
+                type="text"
+                value={userSearchTerm}
+                onChange={(e) => setUserSearchTerm(e.target.value)}
+                placeholder="Buscar por nome, e-mail, telefone..."
+                className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+              <span className="text-xs text-slate-400 font-medium mr-1">Filtrar:</span>
+              {(['all', 'seller', 'buyer', 'owner', 'admin'] as const).map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRoleFilter(r)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    roleFilter === r
+                      ? 'bg-purple-700 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {r === 'all' && 'Todos'}
+                  {r === 'seller' && 'Vendedores'}
+                  {r === 'buyer' && 'Compradores'}
+                  {r === 'owner' && 'Proprietários'}
+                  {r === 'admin' && 'Admins'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Users Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold">
+                  <tr>
+                    <th className="p-3.5">Nome / Identificação</th>
+                    <th className="p-3.5">Papel</th>
+                    <th className="p-3.5">Contato</th>
+                    <th className="p-3.5">Credencial / Documento</th>
+                    <th className="p-3.5">Status</th>
+                    <th className="p-3.5">Cadastrado em</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {dbUsers
+                    .filter((u) => {
+                      const matchesRole = roleFilter === 'all' || u.role === roleFilter;
+                      const matchesSearch =
+                        !userSearchTerm ||
+                        u.full_name?.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+                        u.email?.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+                        u.phone?.toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+                        u.creci_number?.toLowerCase().includes(userSearchTerm.toLowerCase());
+                      return matchesRole && matchesSearch;
+                    })
+                    .map((userItem) => (
+                      <tr key={userItem.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="p-3.5">
+                          <div className="font-bold text-slate-900">{userItem.full_name || 'Não informado'}</div>
+                          <div className="font-mono text-[10px] text-slate-400 mt-0.5">{userItem.id}</div>
+                        </td>
+                        <td className="p-3.5">
+                          {userItem.role === 'seller' && (
+                            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                              Vendedor Autônomo
+                            </span>
+                          )}
+                          {userItem.role === 'buyer' && (
+                            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-100 text-sky-800 border border-sky-200">
+                              Comprador
+                            </span>
+                          )}
+                          {userItem.role === 'owner' && (
+                            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                              Proprietário
+                            </span>
+                          )}
+                          {userItem.role === 'admin' && (
+                            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                              Administrador
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3.5">
+                          <div className="flex items-center gap-1.5 text-slate-700">
+                            <Mail className="w-3 h-3 text-slate-400" />
+                            <span>{userItem.email}</span>
+                          </div>
+                          {userItem.phone && (
+                            <div className="flex items-center gap-1.5 text-slate-500 mt-0.5 text-[11px]">
+                              <Phone className="w-3 h-3 text-slate-400" />
+                              <span>{userItem.phone}</span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3.5">
+                          {userItem.creci_number ? (
+                            <div className="text-slate-800 font-semibold">
+                              CRECI: <span className="font-mono text-purple-700 font-bold">{userItem.creci_number}</span>
+                              {userItem.creci_state && <span className="text-slate-500 text-[11px]"> ({userItem.creci_state})</span>}
+                            </div>
+                          ) : userItem.cpf ? (
+                            <div className="text-slate-600 font-mono text-[11px]">
+                              CPF: {userItem.cpf}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 italic">Padrão da plataforma</span>
+                          )}
+                        </td>
+                        <td className="p-3.5">
+                          {userItem.verification_status === 'approved' ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              Aprovado / Ativo
+                            </span>
+                          ) : userItem.verification_status === 'pending' ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              Pendente CRECI
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                              Ativo
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3.5 text-slate-500 whitespace-nowrap">
+                          {userItem.created_at ? new Date(userItem.created_at).toLocaleString('pt-BR') : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+
+              {dbUsers.length === 0 && (
+                <div className="p-8 text-center text-slate-400 space-y-2">
+                  <Database className="w-8 h-8 mx-auto text-slate-300" />
+                  <div className="text-xs font-semibold text-slate-600">Nenhum cadastro encontrado</div>
+                  <p className="text-[11px] text-slate-400">
+                    Os novos usuários que se cadastrarem pela tela de registro aparecerão aqui instantaneamente.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tab 1: Security Test Suite (Section 11.9) */}
       {activeTab === 'security_tests' && (
